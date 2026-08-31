@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+
+# uv
+# (uv.lock IS committed)
+
+# project
+*.db
+sferic.db
+.pytest_cache/
+.ruff_cache/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
