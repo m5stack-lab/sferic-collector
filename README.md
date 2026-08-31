@@ -1,14 +1,14 @@
 # sferic-collector
 
 The **sferic** fleet collector — the companion MCP server from
-[ADR-0003](https://github.com/ry-ops/sferic/blob/main/docs/adr/0003-companion-mcp-server.md).
+[ADR-0003](https://github.com/ry-ops/sferic-sticks3/blob/main/docs/adr/0003-companion-mcp-server.md).
 Host-side control plane: stations connect to it, MCP clients (agents)
 connect to it, it holds fleet state + the strike/flash store and dispatches
 `<toolset>.<verb>` calls to a target station's headless interface.
 
-Firmware lives in [`ry-ops/sferic`](https://github.com/ry-ops/sferic); the
+Firmware lives in [`ry-ops/sferic-sticks3`](https://github.com/ry-ops/sferic-sticks3); the
 per-toolset wire contracts are its
-[`docs/mcp/`](https://github.com/ry-ops/sferic/tree/main/docs/mcp).
+[`docs/mcp/`](https://github.com/ry-ops/sferic-sticks3/tree/main/docs/mcp).
 
 ## Status
 
