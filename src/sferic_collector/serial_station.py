@@ -162,6 +162,13 @@ class SerialStation(StationTransport):
     async def stream(self, tool: str, params: dict, duration_s: float) -> dict:
         return await asyncio.to_thread(self._stream_blocking, tool, params or {}, duration_s)
 
+    async def emit_arm(self, tool: str, params: dict) -> dict:
+        return await asyncio.to_thread(self._rpc, "emit_arm", 15.0, tool=tool, params=params or {})
+
+    async def emit_fire(self, token: str) -> dict:
+        # a TV-B-Gone sweep blocks the firmware ~5s; HID types — allow slack.
+        return await asyncio.to_thread(self._rpc, "emit_fire", 25.0, token=token)
+
     async def close(self) -> None:
         if self._ser is not None and self._ser.is_open:
             await asyncio.to_thread(self._ser.close)

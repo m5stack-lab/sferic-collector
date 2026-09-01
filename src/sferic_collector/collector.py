@@ -19,6 +19,7 @@ _KIND = {
     "wifi.probe": "probe",
     "ble.scan": "scan",
     "ir.decode": "decode",
+    "ir.capture": "learn",
 }
 
 
@@ -132,3 +133,54 @@ class Collector:
             )
         )
         return flash_id, strikes
+
+    async def emit_dispatch(
+        self,
+        tool: str,
+        station: str,
+        params: dict[str, Any] | None,
+        confirm_token: str | None,
+    ) -> dict:
+        """Two-step emit (ADR-0008 §1). No token -> arm and return the token,
+        nothing fires. With the token -> fire, store an `emit` strike."""
+        toolset = tool.split(".", 1)[0]
+
+        st = self.fleet.get(station)
+        if st is None:
+            raise CollectorError("station_not_found", f"no station {station!r}")
+        cap = await st.capability()
+        if toolset not in cap.toolsets:
+            raise CollectorError(
+                "capability_not_present", f"{station!r} has no {toolset!r} toolset"
+            )
+
+        try:
+            if confirm_token is None:
+                r = await st.emit_arm(tool, params or {})
+            else:
+                r = await st.emit_fire(confirm_token)
+        except (StationError, NotImplementedError) as e:
+            raise CollectorError("station_error", str(e)) from e
+
+        if not r.get("ok"):
+            raise CollectorError(r.get("error", "emit_failed"), r.get("message", ""))
+
+        if confirm_token is None:
+            return {
+                "armed": True,
+                "confirm_token": r["token"],
+                "expires_ms": r.get("expires_ms"),
+            }
+
+        result = r.get("result", {})
+        strike = Strike(
+            id=uuid.uuid4().hex,
+            station=station,
+            ts=now_iso(),
+            toolset=toolset,
+            kind="emit",
+            payload={"decoded": result},
+            meta={"tool": tool},
+        )
+        self.store.add_strike(strike)
+        return {"fired": True, "result": result, "strike": strike.model_dump()}

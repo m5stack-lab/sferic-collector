@@ -52,6 +52,14 @@ class StationTransport(abc.ABC):
         Transports that can't stream raise NotImplementedError."""
         raise NotImplementedError("this transport does not support streaming")
 
+    async def emit_arm(self, tool: str, params: dict) -> dict:
+        """Arm an emitting tool. Returns the raw {ok, token, expires_ms} reply."""
+        raise NotImplementedError("this transport does not support emit")
+
+    async def emit_fire(self, token: str) -> dict:
+        """Fire the armed action. Returns the raw {ok, result} reply."""
+        raise NotImplementedError("this transport does not support emit")
+
     async def close(self) -> None:
         return None
 

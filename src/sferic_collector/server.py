@@ -24,6 +24,7 @@ STATION_TOOLS = [
     "wifi.probe",
     "ble.scan",
     "ir.decode",
+    "ir.capture",  # one-shot learn (non-emitting)
 ]
 
 # Streaming tools: bounded-capture MCP calls that start a session, collect
@@ -32,6 +33,19 @@ STREAM_TOOLS = [
     "wifi.monitor",
     "wifi.deauth",
     "wifi.handshake",
+    "wifi.wardrive",
+    "wifi.portal",
+    "ble.spam",
+    "sensors.mic",
+]
+
+# Emitting tools: two-step arm/fire (ADR-0008 §1). Call without confirm_token
+# to arm; call again with the returned token to fire.
+EMIT_TOOLS = [
+    "ir.tvbgone",
+    "ir.replay",
+    "ble.hid",
+    "usb.hid",
 ]
 
 
@@ -79,6 +93,8 @@ def build_server(collector: Collector | None = None) -> MCPServer:
         _register_station_tool(srv, c, tool_name)
     for tool_name in STREAM_TOOLS:
         _register_stream_tool(srv, c, tool_name)
+    for tool_name in EMIT_TOOLS:
+        _register_emit_tool(srv, c, tool_name)
 
     return srv
 
@@ -122,5 +138,29 @@ def _register_stream_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
         f"Run {tool_name} as a bounded streaming capture on <station> for "
         f"duration_ms (1000–120000). Strikes are stored under one flash and "
         f"returned. Typed errors as for the one-shot tools."
+    )
+    srv.tool(name=tool_name)(_fn)
+
+
+def _register_emit_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
+    async def _fn(
+        station: str,
+        params: dict[str, Any] | None = None,
+        confirm_token: str | None = None,
+    ) -> dict:
+        try:
+            r = await c.emit_dispatch(tool_name, station, params, confirm_token)
+        except CollectorError as e:
+            return {"ok": False, "error": e.code, "message": e.message}
+        return {"ok": True, **r}
+
+    _fn.__name__ = tool_name.replace(".", "_") + "_emit"
+    _fn.__doc__ = (
+        f"Emitting tool {tool_name} — TWO STEPS. Call once WITHOUT "
+        f"confirm_token to arm: nothing is emitted, you get back "
+        f"{{confirm_token, expires_ms}}. Call again WITH that token to fire. "
+        f"params: ble.hid / usb.hid -> {{'text': '...'}}; ir.replay -> "
+        f"{{'raw': [µs,…]}} or {{'proto': N, 'value': '0x…', 'bits': N}}; "
+        f"ir.tvbgone -> none."
     )
     srv.tool(name=tool_name)(_fn)
