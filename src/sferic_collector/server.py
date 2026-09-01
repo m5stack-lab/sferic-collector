@@ -26,6 +26,14 @@ STATION_TOOLS = [
     "ir.decode",
 ]
 
+# Streaming tools: bounded-capture MCP calls that start a session, collect
+# strikes for duration_ms, stop, and store them under one flash.
+STREAM_TOOLS = [
+    "wifi.monitor",
+    "wifi.deauth",
+    "wifi.handshake",
+]
+
 
 def build_server(collector: Collector | None = None) -> MCPServer:
     c = collector or Collector()
@@ -69,6 +77,8 @@ def build_server(collector: Collector | None = None) -> MCPServer:
 
     for tool_name in STATION_TOOLS:
         _register_station_tool(srv, c, tool_name)
+    for tool_name in STREAM_TOOLS:
+        _register_stream_tool(srv, c, tool_name)
 
     return srv
 
@@ -87,5 +97,30 @@ def _register_station_tool(srv: MCPServer, c: Collector, tool_name: str) -> None
         f"stored as a strike and returned. On failure returns a typed error "
         f"(capability_not_present | capability_disabled | station_not_found | "
         f"station_error)."
+    )
+    srv.tool(name=tool_name)(_fn)
+
+
+def _register_stream_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
+    async def _fn(
+        station: str, duration_ms: int = 10000, params: dict[str, Any] | None = None
+    ) -> dict:
+        dur = max(1000, min(int(duration_ms), 120000)) / 1000.0
+        try:
+            flash, strikes = await c.stream_dispatch(tool_name, station, params, dur)
+        except CollectorError as e:
+            return {"ok": False, "error": e.code, "message": e.message}
+        return {
+            "ok": True,
+            "flash": flash,
+            "count": len(strikes),
+            "strikes": [s.model_dump() for s in strikes],
+        }
+
+    _fn.__name__ = tool_name.replace(".", "_") + "_stream"
+    _fn.__doc__ = (
+        f"Run {tool_name} as a bounded streaming capture on <station> for "
+        f"duration_ms (1000–120000). Strikes are stored under one flash and "
+        f"returned. Typed errors as for the one-shot tools."
     )
     srv.tool(name=tool_name)(_fn)

@@ -46,6 +46,12 @@ class StationTransport(abc.ABC):
         StationError for a transport failure.
         """
 
+    async def stream(self, tool: str, params: dict, duration_s: float) -> dict:
+        """Run a bounded streaming session: start, collect strike lines for
+        `duration_s`, stop. Returns {"flash": <id>, "strikes": [<envelope>,…]}.
+        Transports that can't stream raise NotImplementedError."""
+        raise NotImplementedError("this transport does not support streaming")
+
     async def close(self) -> None:
         return None
 

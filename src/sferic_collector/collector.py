@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from .models import Strike, now_iso
+from .models import Flash, Strike, now_iso
 from .store import Store
 from .transport import Fleet, StationError, StationToolError
 
@@ -78,3 +78,57 @@ class Collector:
         )
         self.store.add_strike(strike)
         return strike
+
+    async def stream_dispatch(
+        self, tool: str, station: str, params: dict[str, Any] | None, duration_s: float
+    ) -> tuple[str, list[Strike]]:
+        """Bounded streaming capture: gate on capability, run the session on
+        the station, then persist every strike under one flash."""
+        toolset = tool.split(".", 1)[0]
+
+        st = self.fleet.get(station)
+        if st is None:
+            raise CollectorError("station_not_found", f"no station {station!r}")
+        cap = await st.capability()
+        if toolset not in cap.toolsets:
+            raise CollectorError(
+                "capability_not_present", f"{station!r} has no {toolset!r} toolset"
+            )
+        if (station, tool) in self.disabled:
+            raise CollectorError("capability_disabled", f"{tool!r} disabled on {station!r}")
+
+        try:
+            res = await st.stream(tool, params or {}, duration_s)
+        except StationToolError as e:
+            raise CollectorError(e.code, e.message or e.code) from e
+        except (StationError, NotImplementedError) as e:
+            raise CollectorError("station_error", str(e)) from e
+
+        ingest = now_iso()
+        flash_id = res.get("flash") or uuid.uuid4().hex[:12]
+        strikes: list[Strike] = []
+        for i, o in enumerate(res.get("strikes", [])):
+            s = Strike(
+                id=o.get("id") or f"{flash_id}-{i}",
+                station=station,
+                flash=flash_id,
+                ts=ingest,  # server-normalized; original in meta.device_ts
+                toolset=o.get("toolset", toolset),
+                kind=o.get("kind", "stream"),
+                payload=o.get("payload", {}),
+                meta={"tool": tool, "device_ts": o.get("ts")},
+            )
+            self.store.add_strike(s)
+            strikes.append(s)
+
+        self.store.add_flash(
+            Flash(
+                id=flash_id,
+                station=station,
+                toolset=toolset,
+                label=tool,
+                opened_at=ingest,
+                closed_at=now_iso(),
+            )
+        )
+        return flash_id, strikes

@@ -55,6 +55,7 @@ claude mcp add sferic-collector -- uv --directory /path/to/sferic-collector run 
 | `wifi.probe` | bounded probe-request capture → `{total, uniq, probes:[…]}` |
 | `ble.scan` | BLE scan → `{count, devices:[…]}` |
 | `ir.decode` | listen for one IR frame → `{protocol, value, bits}` |
+| `wifi.monitor` / `wifi.deauth` / `wifi.handshake` | **bounded streaming** capture for `duration_ms` (1000–120000); strikes stored under one flash, returned as `{flash, count, strikes:[…]}` |
 
 Non-sensor tools return real data on a tethered stick (radio free over
 serial); on the simulator they return `capability_not_present`.
@@ -72,9 +73,9 @@ src/sferic_collector/
   store.py        SQLite strike + flash store
   transport.py    StationTransport ABC + Fleet + typed errors
   sim.py          SimulatedStation — in-process fake
-  serial_station.py  SerialStation — USB '>'/'<' line protocol
-  collector.py    dispatch: capability gating + strike wrapping
-  server.py       MCPServer surface
+  serial_station.py  SerialStation — USB '>'/'<' protocol + '!' strike stream
+  collector.py    dispatch + stream_dispatch: capability gating, strike/flash store
+  server.py       MCPServer surface (one-shot + bounded-stream tools)
 tests/
 ```
 
