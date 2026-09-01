@@ -50,8 +50,14 @@ claude mcp add sferic-collector -- uv --directory /path/to/sferic-collector run 
 | `sferic.stations` | list stations + declared `{toolsets, radios}` |
 | `sferic.strikes` | query stored strikes (`station?`, `flash?`, `limit`) |
 | `sferic.flashes` | list capture sessions |
-| `sensors.motion` / `sensors.gesture` | one-shot IMU read on `station` → stored as a strike |
-| `wifi.scan` / `ble.scan` | registered; return `capability_not_present` until a station declares the toolset |
+| `sensors.motion` / `sensors.gesture` | one-shot IMU read → strike |
+| `wifi.scan` | AP scan → `{count, aps:[…]}` strike (`{"ms":…}` param) |
+| `wifi.probe` | bounded probe-request capture → `{total, uniq, probes:[…]}` |
+| `ble.scan` | BLE scan → `{count, devices:[…]}` |
+| `ir.decode` | listen for one IR frame → `{protocol, value, bits}` |
+
+Non-sensor tools return real data on a tethered stick (radio free over
+serial); on the simulator they return `capability_not_present`.
 
 Every hardware tool takes a `station` argument. Failures come back typed
 (ADR-0003 §3): `station_not_found`, `capability_not_present`,
