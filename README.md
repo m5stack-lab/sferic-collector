@@ -55,10 +55,14 @@ claude mcp add sferic-collector -- uv --directory /path/to/sferic-collector run 
 | `wifi.probe` | bounded probe-request capture → `{total, uniq, probes:[…]}` |
 | `ble.scan` | BLE scan → `{count, devices:[…]}` |
 | `ir.decode` | listen for one IR frame → `{protocol, value, bits}` |
-| `wifi.monitor` / `wifi.deauth` / `wifi.handshake` | **bounded streaming** capture for `duration_ms` (1000–120000); strikes stored under one flash, returned as `{flash, count, strikes:[…]}` |
+| `ir.capture` | one-shot IR learn → `{protocol,value,bits,raw:[…]}` |
+| `wifi.monitor` `wifi.deauth` `wifi.handshake` `wifi.wardrive` `wifi.portal` `ble.spam` `sensors.mic` | **bounded streaming** for `duration_ms` (1000–120000); strikes stored under one flash, returned as `{flash, count, strikes:[…]}` |
+| `ir.tvbgone` `ir.replay` `ble.hid` `usb.hid` | **emit, two-step**: call without `confirm_token` to arm (returns `{confirm_token, expires_ms}`, nothing fires); call again with the token to fire. `ble.hid`/`usb.hid` take `params={"text":…}`; `ir.replay` takes `{"raw":[…]}` or `{"proto","value","bits"}` |
 
-Non-sensor tools return real data on a tethered stick (radio free over
-serial); on the simulator they return `capability_not_present`.
+21 MCP tools cover every station capability (7 one-shot, 7 streaming, 4
+emit, 3 fleet). Non-sensor tools return real data on a tethered stick
+(radio free over serial); on the simulator they return
+`capability_not_present`.
 
 Every hardware tool takes a `station` argument. Failures come back typed
 (ADR-0003 §3): `station_not_found`, `capability_not_present`,
