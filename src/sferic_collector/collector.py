@@ -16,7 +16,9 @@ _KIND = {
     "sensors.motion": "motion",
     "sensors.gesture": "gesture",
     "wifi.scan": "scan",
+    "wifi.probe": "probe",
     "ble.scan": "scan",
+    "ir.decode": "decode",
 }
 
 

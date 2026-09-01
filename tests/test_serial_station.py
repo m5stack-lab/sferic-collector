@@ -18,22 +18,27 @@ class FakeSerial:
 
     def __init__(self, responder):
         self._responder = responder
-        self._outbox: list[bytes] = []
+        self._buf = b""
 
     def write(self, data: bytes) -> int:
         cmd = json.loads(data.decode().lstrip(">").strip())
         for line in self._responder(cmd):
-            self._outbox.append(line.encode() + b"\n")
+            self._buf += line.encode() + b"\n"
         return len(data)
 
     def flush(self):
         pass
 
-    def readline(self) -> bytes:
-        return self._outbox.pop(0) if self._outbox else b""
+    @property
+    def in_waiting(self) -> int:
+        return len(self._buf)
+
+    def read(self, n: int = 1) -> bytes:
+        out, self._buf = self._buf[:n], self._buf[n:]
+        return out
 
     def reset_input_buffer(self):
-        pass
+        self._buf = b""
 
     def close(self):
         type(self).is_open = False
@@ -92,8 +97,8 @@ async def test_run_typed_error_raises_stationtoolerror():
 
 async def test_reply_id_mismatch_times_out():
     def responder(cmd):
-        yield "<" + json.dumps({"id": cmd["id"] + 99, "ok": True, "result": {}})
+        yield "<" + json.dumps({"id": cmd["id"] + 99, "ok": True, "station": {}})
 
-    st = _station(responder, rpc_timeout=0.2)
+    st = _station(responder, rpc_timeout=0.2)  # capability() uses this budget
     with pytest.raises(StationError):
-        await st.run("sensors.motion", {})
+        await st.capability()

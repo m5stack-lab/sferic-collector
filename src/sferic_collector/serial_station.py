@@ -48,24 +48,31 @@ class SerialStation(StationTransport):
             self._ser = s
         return self._ser
 
-    def _rpc(self, op: str, **fields) -> dict:
+    def _rpc(self, op: str, timeout: float | None = None, **fields) -> dict:
         with self._lock:
             s = self._open()
             self._next_id += 1
             mid = self._next_id
             s.write((">" + json.dumps({"id": mid, "op": op, **fields}) + "\n").encode())
             s.flush()
-            deadline = time.monotonic() + self._rpc_timeout
+            deadline = time.monotonic() + (timeout or self._rpc_timeout)
+            buf = b""
             while time.monotonic() < deadline:
-                raw = s.readline().decode("utf-8", "replace").strip()
-                if not raw.startswith("<"):
-                    continue  # log line / noise
-                try:
-                    msg = json.loads(raw[1:])
-                except json.JSONDecodeError:
+                chunk = s.read(s.in_waiting or 1)  # drain now, else block up to `timeout`
+                if not chunk:
                     continue
-                if msg.get("id") == mid:
-                    return msg
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    raw = line.decode("utf-8", "replace").strip()
+                    if not raw.startswith("<"):
+                        continue  # log line / noise
+                    try:
+                        msg = json.loads(raw[1:])
+                    except json.JSONDecodeError:
+                        continue
+                    if msg.get("id") == mid:
+                        return msg
             raise StationError(f"{self.port}: timed out waiting for reply to {op!r}")
 
     # --- StationTransport ---
@@ -79,7 +86,11 @@ class SerialStation(StationTransport):
         return Capability(toolsets=st.get("toolsets", []), radios=st.get("radios", []))
 
     async def run(self, tool: str, params: dict) -> dict:
-        msg = await asyncio.to_thread(self._rpc, "run", tool=tool, params=params or {})
+        params = params or {}
+        # a scan/decode run blocks the firmware for its `ms` window — give the
+        # reply that long plus generous slack for stack + serialization.
+        budget = float(params.get("ms", 4000)) / 1000.0 + 10.0
+        msg = await asyncio.to_thread(self._rpc, "run", budget, tool=tool, params=params)
         if msg.get("ok"):
             return msg.get("result", {})
         raise StationToolError(msg.get("error", "station_error"), msg.get("message", ""))

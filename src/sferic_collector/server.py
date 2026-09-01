@@ -21,7 +21,9 @@ STATION_TOOLS = [
     "sensors.motion",
     "sensors.gesture",
     "wifi.scan",
+    "wifi.probe",
     "ble.scan",
+    "ir.decode",
 ]
 
 
