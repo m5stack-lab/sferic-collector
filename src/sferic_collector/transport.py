@@ -4,7 +4,7 @@ ADR-0003 §6 fixes the roles (station is the client, link is persistent) but
 not the wire format. This is the seam every transport plugs into:
 
     SimulatedStation   — in-process fake, for developing with no hardware
-    SerialStation      — USB-tethered stick on a dev desk        (next)
+    SerialStation      — USB-tethered stick over the '>'/'<' line protocol
     WebSocketStation   — station -> Pi over WiFi/WireGuard        (Pi phase; ADR-0009)
 """
 
@@ -16,7 +16,17 @@ from .models import Capability
 
 
 class StationError(Exception):
-    """A device-side failure while running a tool."""
+    """A transport-level failure — link down, timeout, unparseable frame."""
+
+
+class StationToolError(Exception):
+    """The device rejected a tool call with a typed code (e.g. `device_only`,
+    `capability_disabled`). The collector passes the code straight through."""
+
+    def __init__(self, code: str, message: str = "") -> None:
+        super().__init__(f"{code}: {message}" if message else code)
+        self.code = code
+        self.message = message
 
 
 class StationTransport(abc.ABC):
@@ -32,7 +42,8 @@ class StationTransport(abc.ABC):
     async def run(self, tool: str, params: dict) -> dict:
         """Invoke `<toolset>.<verb>` headlessly; return the payload dict.
 
-        Raise StationError on a device-side failure.
+        Raise StationToolError(code) for a typed device-side rejection,
+        StationError for a transport failure.
         """
 
     async def close(self) -> None:
@@ -40,20 +51,23 @@ class StationTransport(abc.ABC):
 
 
 class Fleet:
-    """The set of stations the collector currently knows."""
+    """The set of stations the collector currently knows. Lookup is by the
+    transport's current `.id`, read each call — a transport whose real id only
+    lands after its first `hello` (SerialStation) resolves once `capability()`
+    has run (e.g. via `sferic.stations`)."""
 
     def __init__(self) -> None:
-        self._by_id: dict[str, StationTransport] = {}
+        self._stations: list[StationTransport] = []
 
     def add(self, t: StationTransport) -> None:
-        self._by_id[t.id] = t
+        self._stations.append(t)
 
     def get(self, station_id: str) -> StationTransport | None:
-        return self._by_id.get(station_id)
+        return next((t for t in self._stations if t.id == station_id), None)
 
     def all(self) -> list[StationTransport]:
-        return list(self._by_id.values())
+        return list(self._stations)
 
     async def close(self) -> None:
-        for t in self._by_id.values():
+        for t in self._stations:
             await t.close()

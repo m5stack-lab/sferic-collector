@@ -9,6 +9,7 @@ authors = [{ name = "ry-ops" }]
 dependencies = [
     "mcp>=1.2.0",
     "pydantic>=2.6",
+    "pyserial>=3.5",
 ]
 
 [project.scripts]

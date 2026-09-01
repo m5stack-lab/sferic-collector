@@ -12,21 +12,26 @@ per-toolset wire contracts are its
 
 ## Status
 
-**Milestone 1 — skeleton.** Runs on a laptop with no hardware and no
-Redis/Qdrant: the MCP surface, capability gating, a SQLite strike/flash
-store, and an in-process **simulated station**. Real transports
-(USB-serial to a stick, then WebSocket/MQTT to the Pi) plug in behind
-`StationTransport`.
+**Milestone 2 — real stick over USB serial.** `SerialStation` speaks the
+firmware's `>`/`<` line protocol
+([`docs/mcp/serial-transport.md`](https://github.com/ry-ops/sferic-sticks3/blob/main/docs/mcp/serial-transport.md)):
+`hello` → capability, `run` → `Registry::run` dispatch, typed errors passed
+straight through. Verified end to end — the collector runs `sensors.motion`
+on a tethered StickS3 and stores the strike.
 
-Not built yet: real transports, Redis (hot fleet state / job queue),
-Qdrant (semantic recall), the dashboard, streaming flashes, emitter
-confirm-flows. See ADR-0007 §3 / ADR-0008.
+Milestone 1 (skeleton, capability gating, SQLite store, in-process
+**simulated station**) is the fallback when no port is set.
+
+Not built yet: WebSocket/MQTT transport (Pi phase, ADR-0009), Redis (hot
+fleet state / job queue), Qdrant (semantic recall), the dashboard, streaming
+flashes, emitter confirm-flows. See ADR-0007 §3 / ADR-0008.
 
 ## Run
 
 ```sh
 uv sync
-uv run sferic-collector        # MCP server over stdio
+uv run sferic-collector                              # sim station, stdio MCP
+SFERIC_SERIAL_PORT=/dev/cu.usbmodem1101 uv run sferic-collector   # tethered stick
 uv run pytest
 uv run ruff check
 ```
@@ -35,6 +40,7 @@ Register with Claude Code:
 
 ```sh
 claude mcp add sferic-collector -- uv --directory /path/to/sferic-collector run sferic-collector
+# add --env SFERIC_SERIAL_PORT=/dev/cu.usbmodem1101 for a real stick
 ```
 
 ## MCP surface
@@ -49,7 +55,8 @@ claude mcp add sferic-collector -- uv --directory /path/to/sferic-collector run 
 
 Every hardware tool takes a `station` argument. Failures come back typed
 (ADR-0003 §3): `station_not_found`, `capability_not_present`,
-`capability_disabled`, `station_error`.
+`capability_disabled`, `device_only` (registered but no headless path yet),
+`station_error`.
 
 ## Layout
 
@@ -57,10 +64,11 @@ Every hardware tool takes a `station` argument. Failures come back typed
 src/sferic_collector/
   models.py       Strike / Flash / Capability  (strike-format.md v1)
   store.py        SQLite strike + flash store
-  transport.py    StationTransport ABC + Fleet
+  transport.py    StationTransport ABC + Fleet + typed errors
   sim.py          SimulatedStation — in-process fake
+  serial_station.py  SerialStation — USB '>'/'<' line protocol
   collector.py    dispatch: capability gating + strike wrapping
-  server.py       FastMCP surface
+  server.py       MCPServer surface
 tests/
 ```
 

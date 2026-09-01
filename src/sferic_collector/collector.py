@@ -9,7 +9,7 @@ from typing import Any
 
 from .models import Strike, now_iso
 from .store import Store
-from .transport import Fleet, StationError
+from .transport import Fleet, StationError, StationToolError
 
 # tool -> strike `kind` (sub-type within the toolset)
 _KIND = {
@@ -22,7 +22,8 @@ _KIND = {
 
 class CollectorError(Exception):
     """A typed failure surfaced to the MCP caller (ADR-0003 §3 vocabulary):
-    station_not_found | capability_not_present | capability_disabled | station_error.
+    station_not_found | capability_not_present | capability_disabled |
+    device_only | station_error.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -58,6 +59,9 @@ class Collector:
 
         try:
             payload = await st.run(tool, params or {})
+        except StationToolError as e:
+            # the device already classified it — pass the code straight through
+            raise CollectorError(e.code, e.message or e.code) from e
         except StationError as e:
             raise CollectorError("station_error", str(e)) from e
 

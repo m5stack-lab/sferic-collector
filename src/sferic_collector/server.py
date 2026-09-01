@@ -6,6 +6,7 @@ against the target station's declared capability.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -27,7 +28,15 @@ STATION_TOOLS = [
 def build_server(collector: Collector | None = None) -> MCPServer:
     c = collector or Collector()
     if not c.fleet.all():
-        c.fleet.add(SimulatedStation())
+        # SFERIC_SERIAL_PORT=/dev/tty... attaches a real tethered stick;
+        # otherwise fall back to the in-process simulator.
+        port = os.environ.get("SFERIC_SERIAL_PORT")
+        if port:
+            from .serial_station import SerialStation
+
+            c.fleet.add(SerialStation(port))
+        else:
+            c.fleet.add(SimulatedStation())
 
     srv = MCPServer("sferic-collector")
 
