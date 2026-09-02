@@ -53,10 +53,9 @@ class Collector:
         # per-(station, tool) disable set — the MCP mirror of ADR-0004's
         # registry flags. Empty for now; wired to real state later.
         self.disabled: set[tuple[str, str]] = set()
-        # station -> (tool, token) for the one pending emit arm (ADR-0008 §1).
-        # Binds a fired token to the tool it was actually armed for, so a
-        # fire call can't mislabel the resulting strike with the wrong tool.
-        self._armed: dict[str, tuple[str, str]] = {}
+        # (station, tool) -> the confirm token this collector issued, so a
+        # fire is bound to the exact arm that produced it (ADR-0008 §1).
+        self._armed: dict[tuple[str, str], str] = {}
 
     async def _gate(self, tool: str, station: str) -> tuple[str, StationTransport]:
         """Shared station-lookup + capability + disabled-flag check used by
@@ -162,16 +161,11 @@ class Collector:
         toolset, st = await self._gate(tool, station)
 
         if confirm_token is not None:
-            armed = self._armed.get(station)
-            if armed is None or armed[1] != confirm_token:
-                raise CollectorError("bad_token", f"no matching armed action for {station!r}")
-            if armed[0] != tool:
-                # the token is real, but for a different tool than this call
-                # claims — refuse rather than fire it and mislabel the strike.
-                raise CollectorError(
-                    "tool_mismatch",
-                    f"token was armed for {armed[0]!r}, not {tool!r}",
-                )
+            # a fire must present the token this collector issued for *this*
+            # (station, tool) — not any token from any arm.
+            expected = self._armed.pop((station, tool), None)
+            if expected is None or confirm_token != expected:
+                raise CollectorError("bad_token", f"no matching arm for {tool!r} on {station!r}")
 
         try:
             if confirm_token is None:
@@ -182,19 +176,19 @@ class Collector:
             raise CollectorError("station_error", str(e)) from e
 
         if not r.get("ok"):
-            if confirm_token is not None:
-                self._armed.pop(station, None)
+            # on a fire, the token was already popped above (single-use);
+            # on an arm, nothing was ever recorded — nothing to clean up.
             raise CollectorError(r.get("error", "emit_failed"), r.get("message", ""))
 
         if confirm_token is None:
-            self._armed[station] = (tool, r["token"])
+            token = r["token"]
+            self._armed[(station, tool)] = token
             return {
                 "armed": True,
-                "confirm_token": r["token"],
+                "confirm_token": token,
                 "expires_ms": r.get("expires_ms"),
             }
 
-        self._armed.pop(station, None)
         result = r.get("result", {})
         strike = Strike(
             id=uuid.uuid4().hex,

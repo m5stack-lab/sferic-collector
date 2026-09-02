@@ -111,10 +111,24 @@ async def test_fire_bad_token_errors(collector):
     assert e.value.code == "bad_token"
 
 
-async def test_fire_without_arming_errors(collector):
-    with pytest.raises(CollectorError) as e:
+async def test_fire_without_arm_rejected_before_firmware(collector):
+    with pytest.raises(CollectorError) as e:  # no prior arm on this (station, tool)
         await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, _TOKEN)
     assert e.value.code == "bad_token"
+
+
+async def test_token_bound_to_tool(collector):
+    await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)  # arm tvbgone
+    with pytest.raises(CollectorError) as e:  # ...but try to fire ir.replay with it
+        await collector.emit_dispatch("ir.replay", "stick-abc123", None, _TOKEN)
+    assert e.value.code == "bad_token"
+
+
+async def test_disabled_emit_tool_rejected(collector):
+    collector.disabled.add(("stick-abc123", "ir.tvbgone"))
+    with pytest.raises(CollectorError) as e:
+        await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)
+    assert e.value.code == "capability_disabled"
 
 
 async def test_arm_busy_passes_through(collector):
@@ -127,13 +141,6 @@ async def test_emit_capability_gate(collector):
     with pytest.raises(CollectorError) as e:
         await collector.emit_dispatch("usb.hid", "stick-abc123", {"text": "x"}, None)
     assert e.value.code == "capability_not_present"  # fake declares only ir, ble
-
-
-async def test_emit_disabled_tool_cannot_be_armed(collector):
-    collector.disabled.add(("stick-abc123", "ir.tvbgone"))
-    with pytest.raises(CollectorError) as e:
-        await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)
-    assert e.value.code == "capability_disabled"
 
 
 async def test_emit_disabled_tool_cannot_be_fired_even_with_a_valid_token(collector):
@@ -149,9 +156,11 @@ async def test_fire_with_wrong_tool_for_the_armed_token_is_rejected(collector):
     r = await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)
     with pytest.raises(CollectorError) as e:
         await collector.emit_dispatch("ble.hid", "stick-abc123", None, r["confirm_token"])
-    assert e.value.code == "tool_mismatch"
+    assert e.value.code == "bad_token"  # (station, tool) keying: wrong tool, no such entry
     # nothing fired on the device, nothing stored
     assert collector.store.strikes() == []
-    # the original token is still valid for the tool it was actually armed for
+    # the original token is still valid for the tool it was actually armed for --
+    # the mismatched attempt above popped its own (station, "ble.hid") key, which
+    # never existed, so the real (station, "ir.tvbgone") entry was untouched
     r2 = await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, r["confirm_token"])
     assert r2["fired"] is True
