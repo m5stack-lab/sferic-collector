@@ -96,6 +96,7 @@ async def test_arm_returns_token_no_strike(collector):
 
 
 async def test_fire_with_token_stores_strike(collector):
+    await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)  # arm
     r = await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, _TOKEN)
     assert r["fired"] is True
     assert r["result"] == {"sent": 39}
@@ -103,9 +104,30 @@ async def test_fire_with_token_stores_strike(collector):
 
 
 async def test_fire_bad_token_errors(collector):
+    await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)  # arm
     with pytest.raises(CollectorError) as e:
         await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, "nope")
     assert e.value.code == "bad_token"
+
+
+async def test_fire_without_arm_rejected_before_firmware(collector):
+    with pytest.raises(CollectorError) as e:  # no prior arm on this (station, tool)
+        await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, _TOKEN)
+    assert e.value.code == "bad_token"
+
+
+async def test_token_bound_to_tool(collector):
+    await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)  # arm tvbgone
+    with pytest.raises(CollectorError) as e:  # ...but try to fire ir.replay with it
+        await collector.emit_dispatch("ir.replay", "stick-abc123", None, _TOKEN)
+    assert e.value.code == "bad_token"
+
+
+async def test_disabled_emit_tool_rejected(collector):
+    collector.disabled.add(("stick-abc123", "ir.tvbgone"))
+    with pytest.raises(CollectorError) as e:
+        await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)
+    assert e.value.code == "capability_disabled"
 
 
 async def test_arm_busy_passes_through(collector):

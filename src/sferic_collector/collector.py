@@ -42,6 +42,9 @@ class Collector:
         # per-(station, tool) disable set — the MCP mirror of ADR-0004's
         # registry flags. Empty for now; wired to real state later.
         self.disabled: set[tuple[str, str]] = set()
+        # (station, tool) -> the confirm token this collector issued, so a
+        # fire is bound to the exact arm that produced it.
+        self._armed: dict[tuple[str, str], str] = {}
 
     async def dispatch(
         self, tool: str, station: str, params: dict[str, Any] | None = None
@@ -153,6 +156,17 @@ class Collector:
             raise CollectorError(
                 "capability_not_present", f"{station!r} has no {toolset!r} toolset"
             )
+        # same disabled gate as dispatch()/stream_dispatch() — the confirm
+        # token complements it, it doesn't replace it.
+        if (station, tool) in self.disabled:
+            raise CollectorError("capability_disabled", f"{tool!r} disabled on {station!r}")
+
+        if confirm_token is not None:
+            # a fire must present the token this collector issued for *this*
+            # (station, tool) — not any token from any arm.
+            expected = self._armed.pop((station, tool), None)
+            if expected is None or confirm_token != expected:
+                raise CollectorError("bad_token", f"no matching arm for {tool!r} on {station!r}")
 
         try:
             if confirm_token is None:
@@ -166,9 +180,11 @@ class Collector:
             raise CollectorError(r.get("error", "emit_failed"), r.get("message", ""))
 
         if confirm_token is None:
+            token = r["token"]
+            self._armed[(station, tool)] = token
             return {
                 "armed": True,
-                "confirm_token": r["token"],
+                "confirm_token": token,
                 "expires_ms": r.get("expires_ms"),
             }
 
