@@ -35,19 +35,48 @@ _MIN_LABEL_LEN = 4  # shorter substrings match too much free text to be useful
 # ("archer_ax53_firmware") that will never appear in a device's own SSID/name
 # -- stripped before token matching so they don't block an otherwise-good hit.
 _PRODUCT_NOISE_WORDS = {
-    "firmware", "wireless", "router", "gateway", "adapter", "modem",
-    "system", "software", "device", "series",
+    "firmware",
+    "wireless",
+    "router",
+    "gateway",
+    "adapter",
+    "modem",
+    "system",
+    "software",
+    "device",
+    "series",
 }
 _MIN_SOLE_TOKEN_LEN = 6  # a single surviving token must be this specific to count alone
 
 # Legal-entity noise words stripped before slugging a vendor name, e.g.
 # "Amazon Technologies Inc." -> "amazon", "Netgear, Inc." -> "netgear".
 _SUFFIX_WORDS = {
-    "technologies", "technology", "co", "ltd", "inc", "incorporated",
-    "corp", "corporation", "systems", "communications", "communication",
-    "networks", "network", "electronics", "electronic", "gmbh", "limited",
-    "pty", "srl", "group", "holding", "international", "labs",
-    "laboratories", "company", "the",
+    "technologies",
+    "technology",
+    "co",
+    "ltd",
+    "inc",
+    "incorporated",
+    "corp",
+    "corporation",
+    "systems",
+    "communications",
+    "communication",
+    "networks",
+    "network",
+    "electronics",
+    "electronic",
+    "gmbh",
+    "limited",
+    "pty",
+    "srl",
+    "group",
+    "holding",
+    "international",
+    "labs",
+    "laboratories",
+    "company",
+    "the",
 }
 
 
