@@ -153,7 +153,13 @@ class SerialStation(StationTransport):
         params = params or {}
         # a scan/decode run blocks the firmware for its `ms` window — give the
         # reply that long plus generous slack for stack + serialization.
-        budget = float(params.get("ms", 4000)) / 1000.0 + 10.0
+        # Clamped like the streaming tools' duration_ms so a caller can't
+        # hold the station's single request lock indefinitely.
+        try:
+            ms = min(float(params.get("ms", 4000)), 120000.0)
+        except (TypeError, ValueError):
+            raise StationToolError("bad_params", "params.ms must be a number") from None
+        budget = ms / 1000.0 + 10.0
         msg = await asyncio.to_thread(self._rpc, "run", budget, tool=tool, params=params)
         if msg.get("ok"):
             return msg.get("result", {})

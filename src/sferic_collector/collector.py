@@ -7,9 +7,14 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from .enrichment import Enricher
 from .models import Flash, Strike, now_iso
 from .store import Store
-from .transport import Fleet, StationError, StationToolError
+from .transport import Fleet, StationError, StationToolError, StationTransport
+
+# tools whose strikes get an automatic vendor + CVE-lead enrichment pass
+# (ADR-0010) before storage.
+_ENRICHABLE = {"wifi.scan", "ble.scan"}
 
 # tool -> strike `kind` (sub-type within the toolset)
 _KIND = {
@@ -36,22 +41,30 @@ class CollectorError(Exception):
 
 
 class Collector:
-    def __init__(self, store: Store | None = None, fleet: Fleet | None = None) -> None:
+    def __init__(
+        self,
+        store: Store | None = None,
+        fleet: Fleet | None = None,
+        enricher: Enricher | None = None,
+    ) -> None:
         self.store = store or Store()
         self.fleet = fleet or Fleet()
+        self.enricher = enricher or Enricher()
         # per-(station, tool) disable set — the MCP mirror of ADR-0004's
         # registry flags. Empty for now; wired to real state later.
         self.disabled: set[tuple[str, str]] = set()
+        # station -> (tool, token) for the one pending emit arm (ADR-0008 §1).
+        # Binds a fired token to the tool it was actually armed for, so a
+        # fire call can't mislabel the resulting strike with the wrong tool.
+        self._armed: dict[str, tuple[str, str]] = {}
 
-    async def dispatch(
-        self, tool: str, station: str, params: dict[str, Any] | None = None
-    ) -> Strike:
+    async def _gate(self, tool: str, station: str) -> tuple[str, StationTransport]:
+        """Shared station-lookup + capability + disabled-flag check used by
+        every dispatch path."""
         toolset = tool.split(".", 1)[0]
-
         st = self.fleet.get(station)
         if st is None:
             raise CollectorError("station_not_found", f"no station {station!r}")
-
         cap = await st.capability()
         if toolset not in cap.toolsets:
             raise CollectorError(
@@ -59,6 +72,12 @@ class Collector:
             )
         if (station, tool) in self.disabled:
             raise CollectorError("capability_disabled", f"{tool!r} disabled on {station!r}")
+        return toolset, st
+
+    async def dispatch(
+        self, tool: str, station: str, params: dict[str, Any] | None = None
+    ) -> Strike:
+        toolset, st = await self._gate(tool, station)
 
         try:
             payload = await st.run(tool, params or {})
@@ -67,6 +86,14 @@ class Collector:
             raise CollectorError(e.code, e.message or e.code) from e
         except StationError as e:
             raise CollectorError("station_error", str(e)) from e
+
+        if tool in _ENRICHABLE:
+            try:
+                await self.enricher.enrich(tool, payload)
+            except Exception:
+                # enrichment is a best-effort external lookup — never lose a
+                # scan strike over a CVE/OUI API being slow or down.
+                pass
 
         strike = Strike(
             id=uuid.uuid4().hex,
@@ -85,18 +112,7 @@ class Collector:
     ) -> tuple[str, list[Strike]]:
         """Bounded streaming capture: gate on capability, run the session on
         the station, then persist every strike under one flash."""
-        toolset = tool.split(".", 1)[0]
-
-        st = self.fleet.get(station)
-        if st is None:
-            raise CollectorError("station_not_found", f"no station {station!r}")
-        cap = await st.capability()
-        if toolset not in cap.toolsets:
-            raise CollectorError(
-                "capability_not_present", f"{station!r} has no {toolset!r} toolset"
-            )
-        if (station, tool) in self.disabled:
-            raise CollectorError("capability_disabled", f"{tool!r} disabled on {station!r}")
+        toolset, st = await self._gate(tool, station)
 
         try:
             res = await st.stream(tool, params or {}, duration_s)
@@ -143,16 +159,19 @@ class Collector:
     ) -> dict:
         """Two-step emit (ADR-0008 §1). No token -> arm and return the token,
         nothing fires. With the token -> fire, store an `emit` strike."""
-        toolset = tool.split(".", 1)[0]
+        toolset, st = await self._gate(tool, station)
 
-        st = self.fleet.get(station)
-        if st is None:
-            raise CollectorError("station_not_found", f"no station {station!r}")
-        cap = await st.capability()
-        if toolset not in cap.toolsets:
-            raise CollectorError(
-                "capability_not_present", f"{station!r} has no {toolset!r} toolset"
-            )
+        if confirm_token is not None:
+            armed = self._armed.get(station)
+            if armed is None or armed[1] != confirm_token:
+                raise CollectorError("bad_token", f"no matching armed action for {station!r}")
+            if armed[0] != tool:
+                # the token is real, but for a different tool than this call
+                # claims — refuse rather than fire it and mislabel the strike.
+                raise CollectorError(
+                    "tool_mismatch",
+                    f"token was armed for {armed[0]!r}, not {tool!r}",
+                )
 
         try:
             if confirm_token is None:
@@ -163,15 +182,19 @@ class Collector:
             raise CollectorError("station_error", str(e)) from e
 
         if not r.get("ok"):
+            if confirm_token is not None:
+                self._armed.pop(station, None)
             raise CollectorError(r.get("error", "emit_failed"), r.get("message", ""))
 
         if confirm_token is None:
+            self._armed[station] = (tool, r["token"])
             return {
                 "armed": True,
                 "confirm_token": r["token"],
                 "expires_ms": r.get("expires_ms"),
             }
 
+        self._armed.pop(station, None)
         result = r.get("result", {})
         strike = Strike(
             id=uuid.uuid4().hex,
