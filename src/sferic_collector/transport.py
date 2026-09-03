@@ -33,6 +33,8 @@ class StationTransport(abc.ABC):
     id: str = "unknown"
     model: str = "unknown"
     fw_version: str = "unknown"
+    kind: str = "unknown"  # "serial" | "ws" | "sim" — how the collector reaches it
+    online: bool = True
 
     @abc.abstractmethod
     async def capability(self) -> Capability:
@@ -74,7 +76,16 @@ class Fleet:
         self._stations: list[StationTransport] = []
 
     def add(self, t: StationTransport) -> None:
+        """Register a station. A non-placeholder id that already exists is
+        replaced — a WebSocket station reconnecting with the same `hello.id`
+        supersedes its stale entry (ADR-0009 §3)."""
+        tid = getattr(t, "id", None)
+        if tid and not tid.startswith(("serial:", "unknown")):
+            self._stations = [s for s in self._stations if s.id != tid]
         self._stations.append(t)
+
+    def remove(self, station_id: str) -> None:
+        self._stations = [s for s in self._stations if s.id != station_id]
 
     def get(self, station_id: str) -> StationTransport | None:
         return next((t for t in self._stations if t.id == station_id), None)

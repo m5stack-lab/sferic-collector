@@ -25,8 +25,8 @@ _KIND = {
 
 class CollectorError(Exception):
     """A typed failure surfaced to the MCP caller (ADR-0003 §3 vocabulary):
-    station_not_found | capability_not_present | capability_disabled |
-    device_only | station_error.
+    station_not_found | no_capable_station | ambiguous_station |
+    capability_not_present | capability_disabled | device_only | station_error.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -46,14 +46,37 @@ class Collector:
         # fire is bound to the exact arm that produced it.
         self._armed: dict[tuple[str, str], str] = {}
 
+    async def _resolve(self, toolset: str, station: str | None):
+        """Pick the target station. Named -> that one (must exist). Unnamed ->
+        the single station in the fleet that declares `toolset`; 0 matches is
+        `no_capable_station`, >1 is `ambiguous_station` (name one)."""
+        if station is not None:
+            st = self.fleet.get(station)
+            if st is None:
+                raise CollectorError("station_not_found", f"no station {station!r}")
+            return st
+
+        matches = []
+        for st in self.fleet.all():
+            cap = await st.capability()
+            if toolset in cap.toolsets:
+                matches.append(st)
+        if not matches:
+            raise CollectorError("no_capable_station", f"no station has the {toolset!r} toolset")
+        if len(matches) > 1:
+            ids = ", ".join(s.id for s in matches)
+            raise CollectorError(
+                "ambiguous_station", f"{len(matches)} stations have {toolset!r} ({ids}) — name one"
+            )
+        return matches[0]
+
     async def dispatch(
-        self, tool: str, station: str, params: dict[str, Any] | None = None
+        self, tool: str, station: str | None = None, params: dict[str, Any] | None = None
     ) -> Strike:
         toolset = tool.split(".", 1)[0]
 
-        st = self.fleet.get(station)
-        if st is None:
-            raise CollectorError("station_not_found", f"no station {station!r}")
+        st = await self._resolve(toolset, station)
+        station = st.id
 
         cap = await st.capability()
         if toolset not in cap.toolsets:
@@ -84,15 +107,18 @@ class Collector:
         return strike
 
     async def stream_dispatch(
-        self, tool: str, station: str, params: dict[str, Any] | None, duration_s: float
+        self,
+        tool: str,
+        station: str | None,
+        params: dict[str, Any] | None,
+        duration_s: float,
     ) -> tuple[str, list[Strike]]:
         """Bounded streaming capture: gate on capability, run the session on
         the station, then persist every strike under one flash."""
         toolset = tool.split(".", 1)[0]
 
-        st = self.fleet.get(station)
-        if st is None:
-            raise CollectorError("station_not_found", f"no station {station!r}")
+        st = await self._resolve(toolset, station)
+        station = st.id
         cap = await st.capability()
         if toolset not in cap.toolsets:
             raise CollectorError(
@@ -140,7 +166,7 @@ class Collector:
     async def emit_dispatch(
         self,
         tool: str,
-        station: str,
+        station: str | None,
         params: dict[str, Any] | None,
         confirm_token: str | None,
     ) -> dict:
@@ -148,9 +174,8 @@ class Collector:
         nothing fires. With the token -> fire, store an `emit` strike."""
         toolset = tool.split(".", 1)[0]
 
-        st = self.fleet.get(station)
-        if st is None:
-            raise CollectorError("station_not_found", f"no station {station!r}")
+        st = await self._resolve(toolset, station)
+        station = st.id
         cap = await st.capability()
         if toolset not in cap.toolsets:
             raise CollectorError(

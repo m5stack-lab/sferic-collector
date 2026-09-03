@@ -66,15 +66,21 @@ def build_server(collector: Collector | None = None) -> MCPServer:
 
     @srv.tool(name="sferic.stations")
     async def sferic_stations() -> list[dict]:
-        """List every station the collector knows, with its declared capability."""
+        """List every station the collector knows, with its declared
+        capability, how it is reached (`transport`: serial | ws | sim), and
+        whether it is currently `online`."""
         out: list[dict] = []
         for st in c.fleet.all():
             cap = await st.capability()
-            out.append(
-                StationInfo(
-                    id=st.id, model=st.model, fw_version=st.fw_version, capability=cap
-                ).model_dump()
-            )
+            d = StationInfo(
+                id=st.id,
+                model=st.model,
+                fw_version=st.fw_version,
+                online=getattr(st, "online", True),
+                capability=cap,
+            ).model_dump()
+            d["transport"] = getattr(st, "kind", "unknown")
+            out.append(d)
         return out
 
     @srv.tool(name="sferic.strikes")
@@ -100,7 +106,7 @@ def build_server(collector: Collector | None = None) -> MCPServer:
 
 
 def _register_station_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
-    async def _fn(station: str, params: dict[str, Any] | None = None) -> RunResult:
+    async def _fn(station: str | None = None, params: dict[str, Any] | None = None) -> RunResult:
         try:
             strike = await c.dispatch(tool_name, station, params)
         except CollectorError as e:
@@ -109,8 +115,10 @@ def _register_station_tool(srv: MCPServer, c: Collector, tool_name: str) -> None
 
     _fn.__name__ = tool_name.replace(".", "_")
     _fn.__doc__ = (
-        f"Run {tool_name} on <station> headlessly. On success the result is "
-        f"stored as a strike and returned. On failure returns a typed error "
+        f"Run {tool_name} headlessly. `station` is optional — omit it and the "
+        f"collector routes to the one station that has this toolset (errors "
+        f"no_capable_station / ambiguous_station otherwise). On success the "
+        f"result is stored as a strike and returned; on failure a typed error "
         f"(capability_not_present | capability_disabled | station_not_found | "
         f"station_error)."
     )
@@ -119,7 +127,9 @@ def _register_station_tool(srv: MCPServer, c: Collector, tool_name: str) -> None
 
 def _register_stream_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
     async def _fn(
-        station: str, duration_ms: int = 10000, params: dict[str, Any] | None = None
+        station: str | None = None,
+        duration_ms: int = 10000,
+        params: dict[str, Any] | None = None,
     ) -> dict:
         dur = max(1000, min(int(duration_ms), 120000)) / 1000.0
         try:
@@ -135,8 +145,9 @@ def _register_stream_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
 
     _fn.__name__ = tool_name.replace(".", "_") + "_stream"
     _fn.__doc__ = (
-        f"Run {tool_name} as a bounded streaming capture on <station> for "
-        f"duration_ms (1000–120000). Strikes are stored under one flash and "
+        f"Run {tool_name} as a bounded streaming capture for duration_ms "
+        f"(1000–120000). `station` is optional (auto-routed by toolset, as "
+        f"for the one-shot tools). Strikes are stored under one flash and "
         f"returned. Typed errors as for the one-shot tools."
     )
     srv.tool(name=tool_name)(_fn)
@@ -144,7 +155,7 @@ def _register_stream_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
 
 def _register_emit_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
     async def _fn(
-        station: str,
+        station: str | None = None,
         params: dict[str, Any] | None = None,
         confirm_token: str | None = None,
     ) -> dict:
@@ -159,6 +170,7 @@ def _register_emit_tool(srv: MCPServer, c: Collector, tool_name: str) -> None:
         f"Emitting tool {tool_name} — TWO STEPS. Call once WITHOUT "
         f"confirm_token to arm: nothing is emitted, you get back "
         f"{{confirm_token, expires_ms}}. Call again WITH that token to fire. "
+        f"`station` is optional (auto-routed by toolset). "
         f"params: ble.hid / usb.hid -> {{'text': '...'}}; ir.replay -> "
         f"{{'raw': [µs,…]}} or {{'proto': N, 'value': '0x…', 'bits': N}}; "
         f"ir.tvbgone -> none."
