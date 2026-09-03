@@ -31,8 +31,14 @@ firmware's `>`/`<` line protocol
 Milestone 1 (skeleton, capability gating, SQLite store, in-process
 **simulated station**) is the fallback when nothing else is attached.
 
-Not built yet: Redis (hot fleet state / job queue), Qdrant (semantic
-recall), the dashboard. See ADR-0007 §3 / ADR-0008.
+**Recall.** `sferic.recall` full-text-searches every stored strike (toolset,
+kind, station, flash, and the flattened decoded payload), BM25-ranked, with
+optional `station` / `toolset` / `kind` filters. Backed by SQLite FTS5 today
+(zero extra deps); a semantic/embedding backend can replace `Store.search`
+behind the same tool when the Pi lands.
+
+Not built yet: Redis (hot fleet state / job queue), the embedding backend
+for `sferic.recall`, the dashboard. See ADR-0007 §3 / ADR-0008.
 
 ## Run
 
@@ -61,9 +67,10 @@ claude mcp add sferic-collector -- uv --directory /path/to/sferic-collector run 
 
 | Tool | Purpose |
 |---|---|
-| `sferic.stations` | list stations + declared `{toolsets, radios}` |
+| `sferic.stations` | list stations + declared `{toolsets, radios}`, `transport`, `online` |
 | `sferic.strikes` | query stored strikes (`station?`, `flash?`, `limit`) |
 | `sferic.flashes` | list capture sessions |
+| `sferic.recall` | full-text search over strikes — `query` + `station?`/`toolset?`/`kind?` filters, ranked best-first (local FTS5; a semantic backend slots in behind this later) |
 | `sensors.motion` / `sensors.gesture` | one-shot IMU read → strike |
 | `wifi.scan` | AP scan → `{count, aps:[…]}` strike (`{"ms":…}` param) |
 | `wifi.probe` | bounded probe-request capture → `{total, uniq, probes:[…]}` |
@@ -88,15 +95,15 @@ but no headless path yet), `station_error`.
 
 ```
 src/sferic_collector/
-  models.py       Strike / Flash / Capability  (strike-format.md v1)
-  store.py        SQLite strike + flash store
+  models.py       Strike / Flash / Capability + strike_text() (searchable projection)
+  store.py        SQLite strike + flash store + FTS5 recall (Store.search)
   transport.py    StationTransport ABC + Fleet (id de-dup, capability routing)
   sim.py          SimulatedStation — in-process fake
   serial_station.py  SerialStation — USB '>'/'<' protocol + '!' strike stream
   ws_station.py   WebSocketStation — {"type":…} frames over one socket (ADR-0009)
   ws_server.py    Starlette listener stations dial into (/station, /health)
   collector.py    dispatch + stream + emit: capability gating/routing, store
-  server.py       MCPServer surface (one-shot + bounded-stream + emit tools)
+  server.py       MCPServer surface (one-shot + stream + emit + sferic.recall)
 tests/
 ```
 

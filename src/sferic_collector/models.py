@@ -73,3 +73,33 @@ class RunResult(BaseModel):
 def now_iso() -> str:
     """Current wall-clock as ISO 8601 with a trailing Z."""
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _flatten(obj: Any, _depth: int = 0) -> str:
+    """A decoded payload -> a flat "key value key value" string for indexing."""
+    if _depth > 6:
+        return ""
+    if isinstance(obj, dict):
+        return " ".join(f"{k} {_flatten(v, _depth + 1)}" for k, v in obj.items())
+    if isinstance(obj, (list, tuple)):
+        return " ".join(_flatten(x, _depth + 1) for x in list(obj)[:40])
+    if isinstance(obj, bool):
+        return "yes" if obj else "no"
+    return str(obj)
+
+
+def strike_text(s: Strike) -> str:
+    """The searchable projection of a strike: identity + flattened decoded
+    payload. Used by the recall index (`Store.search`) and, later, as the
+    document a semantic backend embeds."""
+    parts = [s.toolset, s.kind, s.station]
+    if s.label:
+        parts.append(s.label)
+    tool = s.meta.get("tool")
+    if isinstance(tool, str):
+        parts.append(tool)
+    if s.flash:
+        parts.append(s.flash)
+    decoded = s.payload.get("decoded", s.payload) if isinstance(s.payload, dict) else s.payload
+    parts.append(_flatten(decoded))
+    return " ".join(p for p in parts if p)

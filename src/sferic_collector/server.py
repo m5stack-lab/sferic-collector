@@ -1,7 +1,8 @@
 """MCP surface (ADR-0003 §5). Fleet tools (`sferic.*`) plus one
-`<toolset>.<verb>` tool per known capability; every hardware tool takes a
-`station` argument. Tools are registered statically and gated at call time
-against the target station's declared capability.
+`<toolset>.<verb>` tool per known capability. Each hardware tool takes an
+optional `station` (auto-routed by toolset when omitted). Tools are
+registered statically and gated at call time against the target station's
+declared capability.
 """
 
 from __future__ import annotations
@@ -94,6 +95,26 @@ def build_server(collector: Collector | None = None) -> MCPServer:
     def sferic_flashes(station: str | None = None) -> list[dict]:
         """List capture sessions (flashes)."""
         return [f.model_dump() for f in c.store.flashes(station)]
+
+    @srv.tool(name="sferic.recall")
+    def sferic_recall(
+        query: str,
+        limit: int = 20,
+        station: str | None = None,
+        toolset: str | None = None,
+        kind: str | None = None,
+    ) -> list[dict]:
+        """Full-text recall over stored strikes — matches the toolset, kind,
+        station, flash, and the flattened decoded payload of every strike,
+        ranked best-first. Optional exact filters: `station`, `toolset`
+        (wifi | ble | ir | sensors | subghz | nrf24 | …), `kind` (scan |
+        monitor | deauth | decode | emit | …). This is the local index; a
+        semantic (embedding) backend can replace it behind this same tool
+        for the Pi phase."""
+        return [
+            s.model_dump()
+            for s in c.store.search(query, station=station, toolset=toolset, kind=kind, limit=limit)
+        ]
 
     for tool_name in STATION_TOOLS:
         _register_station_tool(srv, c, tool_name)
