@@ -63,6 +63,16 @@ WS env: `SFERIC_WS_PORT` (enables the listener), `SFERIC_WS_HOST` (default
 unset = accept any station, dev only). A station's config lives in the
 firmware's gitignored `src/ws_config.h`.
 
+**No hardware?** `sferic-fake-station` is a stand-in for the `sferic-ws`
+firmware — connects over WebSocket, declares a capability set, and answers
+`run` / `stream_*` / `emit_*` with synthetic data. Run one (or several) in
+another terminal to exercise the collector, routing, and the dashboard:
+
+```sh
+uv run sferic-fake-station --token tok1 --id stick-fake --toolsets wifi,ble,ir,sensors
+uv run sferic-fake-station --token tok1 --id tab5-fake  --toolsets sensors,ble
+```
+
 Register with Claude Code:
 
 ```sh
@@ -110,6 +120,7 @@ src/sferic_collector/
   ws_station.py   WebSocketStation — {"type":…} frames over one socket (ADR-0009)
   web.py          Starlette HTTP+WS surface — /station, dashboard /, /api/*
   web_dashboard.py  the dashboard page (one self-contained HTML string)
+  fake_station.py   `sferic-fake-station` — a firmware stand-in over WebSocket
   collector.py    dispatch + stream + emit: capability gating/routing, store
   server.py       MCPServer surface (one-shot + stream + emit + sferic.recall)
 tests/

@@ -12,10 +12,12 @@ dependencies = [
     "pyserial>=3.5",
     "starlette>=0.40",   # WS listener for networked stations (ADR-0009)
     "uvicorn>=0.30",
+    "websockets>=13",    # fake-station dev client (also used by the e2e test)
 ]
 
 [project.scripts]
 sferic-collector = "sferic_collector.__main__:main"
+sferic-fake-station = "sferic_collector.fake_station:main"
 
 [dependency-groups]
 dev = [
