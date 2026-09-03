@@ -13,7 +13,7 @@ per-toolset wire contracts are its
 ## Status
 
 **Milestone 3 — networked stations (WebSocket).** `WebSocketStation` +
-`ws_server.py`: a Starlette listener stations dial into
+`web.py`: a Starlette listener stations dial into
 (`ws://<collector>:<port>/station`), same op vocabulary as serial, framed as
 `{"type":…}` JSON text frames
 ([`docs/mcp/ws-transport.md`](https://github.com/ry-ops/sferic-sticks3/blob/main/docs/mcp/ws-transport.md),
@@ -37,8 +37,15 @@ optional `station` / `toolset` / `kind` filters. Backed by SQLite FTS5 today
 (zero extra deps); a semantic/embedding backend can replace `Store.search`
 behind the same tool when the Pi lands.
 
+**Dashboard.** With `SFERIC_WS_PORT` set the same process serves a
+self-contained read-only page at `GET /` (stations, a recall search box,
+recent strikes, flashes; polls every 4 s) plus JSON at `/api/stations`,
+`/api/strikes`, `/api/flashes`, `/api/recall`. No build step, no external
+assets — one HTML string in `web_dashboard.py`.
+
 Not built yet: Redis (hot fleet state / job queue), the embedding backend
-for `sferic.recall`, the dashboard. See ADR-0007 §3 / ADR-0008.
+for `sferic.recall`, dashboard write-actions (it is read-only). See
+ADR-0007 §3 / ADR-0008.
 
 ## Run
 
@@ -46,7 +53,7 @@ for `sferic.recall`, the dashboard. See ADR-0007 §3 / ADR-0008.
 uv sync
 uv run sferic-collector                              # sim station, stdio MCP
 SFERIC_SERIAL_PORT=/dev/cu.usbmodem1101 uv run sferic-collector   # tethered stick
-SFERIC_WS_PORT=8787 SFERIC_WS_TOKENS=tok1,tok2 uv run sferic-collector  # + WS listener
+SFERIC_WS_PORT=8787 SFERIC_WS_TOKENS=tok1,tok2 uv run sferic-collector  # + station WS + dashboard on :8787
 uv run pytest
 uv run ruff check
 ```
@@ -101,7 +108,8 @@ src/sferic_collector/
   sim.py          SimulatedStation — in-process fake
   serial_station.py  SerialStation — USB '>'/'<' protocol + '!' strike stream
   ws_station.py   WebSocketStation — {"type":…} frames over one socket (ADR-0009)
-  ws_server.py    Starlette listener stations dial into (/station, /health)
+  web.py          Starlette HTTP+WS surface — /station, dashboard /, /api/*
+  web_dashboard.py  the dashboard page (one self-contained HTML string)
   collector.py    dispatch + stream + emit: capability gating/routing, store
   server.py       MCPServer surface (one-shot + stream + emit + sferic.recall)
 tests/

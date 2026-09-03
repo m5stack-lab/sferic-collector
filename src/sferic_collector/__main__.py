@@ -3,13 +3,14 @@
 Default: the MCP server over stdio (for `claude mcp add` and other local
 MCP clients).
 
-With `SFERIC_WS_PORT` set: also run the WebSocket listener (ADR-0009) so
-networked stations can dial in, in the same process/event loop.
+With `SFERIC_WS_PORT` set: also run the HTTP + WebSocket surface (ADR-0009,
+ADR-0007 §3) in the same process/event loop — networked stations dial in at
+`/station`, and a read-only dashboard is served at `/`.
 
 Env:
   SFERIC_SERIAL_PORT   attach a USB-tethered stick as a station
-  SFERIC_WS_PORT       run the WS listener on this port (station endpoint /station)
-  SFERIC_WS_HOST       bind address for the WS listener (default 0.0.0.0)
+  SFERIC_WS_PORT       serve the HTTP/WS surface on this port (/station, /, /api/*)
+  SFERIC_WS_HOST       bind address (default 0.0.0.0)
   SFERIC_WS_TOKENS     comma-separated accepted per-station bearer tokens;
                        unset/empty accepts any station (dev only)
 """
@@ -31,7 +32,7 @@ def _tokens() -> set[str]:
 async def _run_with_ws(collector: Collector, port: int) -> None:
     import uvicorn
 
-    from .ws_server import make_ws_app
+    from .web import make_app
 
     tokens = _tokens()
     if not tokens:
@@ -40,7 +41,7 @@ async def _run_with_ws(collector: Collector, port: int) -> None:
             file=sys.stderr,
         )
 
-    app = make_ws_app(collector, tokens)
+    app = make_app(collector, tokens)
     config = uvicorn.Config(
         app,
         host=os.environ.get("SFERIC_WS_HOST", "0.0.0.0"),
@@ -50,7 +51,10 @@ async def _run_with_ws(collector: Collector, port: int) -> None:
     ws = uvicorn.Server(config)
     srv = build_server(collector)
 
-    print(f"[sferic-collector] WS listener on :{port}/station", file=sys.stderr)
+    print(
+        f"[sferic-collector] http/ws on :{port}  (dashboard /, stations /station)",
+        file=sys.stderr,
+    )
     ws_task = asyncio.create_task(ws.serve())
     mcp_task = asyncio.create_task(srv.run_stdio_async())
     done, pending = await asyncio.wait({ws_task, mcp_task}, return_when=asyncio.FIRST_COMPLETED)

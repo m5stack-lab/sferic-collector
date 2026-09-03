@@ -1,6 +1,6 @@
 """WebSocket station transport (ADR-0009). The station is the WS *client*
 (firmware `sferic-sticks3` `src/ws_station.cpp`); the collector runs the
-listener (`ws_server.py`) and wraps each accepted socket in one of these.
+listener (`web.py`) and wraps each accepted socket in one of these.
 
 Wire format (`sferic` repo `docs/mcp/ws-transport.md`): one JSON object per
 text frame, `type` in {hello, welcome, cmd, reply, strike, event, ping,
