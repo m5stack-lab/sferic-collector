@@ -18,8 +18,17 @@ def srv(tmp_path):
 
 async def test_tools_registered(srv):
     names = {t.name for t in await srv.list_tools()}
-    assert {"sferic.stations", "sferic.strikes", "sferic.flashes"} <= names
+    assert {"sferic.stations", "sferic.strikes", "sferic.flashes", "sferic.recall"} <= names
     assert {"sensors.motion", "wifi.scan"} <= names
+
+
+async def test_recall_tool_searches_stored_strikes(srv):
+    await srv.call_tool("sensors.motion", {"station": "sim-1"})  # stores a strike
+    hits = _payload(await srv.call_tool("sferic.recall", {"query": "sensors motion sim-1"}))
+    assert len(hits) == 1
+    assert hits[0]["toolset"] == "sensors"
+
+    assert _payload(await srv.call_tool("sferic.recall", {"query": "nothing-matches-this"})) == []
 
 
 async def test_stations_tool(srv):

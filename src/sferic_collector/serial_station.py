@@ -23,6 +23,8 @@ DEFAULT_BAUD = 115200
 
 
 class SerialStation(StationTransport):
+    kind = "serial"
+
     def __init__(
         self,
         port: str = DEFAULT_PORT,

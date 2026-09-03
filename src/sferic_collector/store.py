@@ -1,8 +1,10 @@
-"""Strike / Flash store. SQLite for now — Redis (hot state) + Qdrant
-(semantic recall) slot in when the Pi 5 collector lands (ADR-0007 §3).
+"""Strike / Flash store + recall index. SQLite for now — Redis (hot state)
+slots in when the Pi 5 collector lands (ADR-0007 §3).
 
 The full record is kept as JSON in `doc`; the promoted columns exist only
-for filtering.
+for filtering. `Store.search()` is a local full-text recall over a flattened
+projection of each strike (`models.strike_text`); a semantic (embedding)
+backend can replace it behind the same signature for the Pi phase.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from .models import Flash, Strike
+from .models import Flash, Strike, strike_text
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS strikes (
@@ -38,11 +40,29 @@ CREATE TABLE IF NOT EXISTS flashes (
 """
 
 
+def _fts_query(query: str) -> str:
+    """User text -> a safe FTS5 MATCH expression: each term a quoted literal,
+    AND-combined. Keeps punctuation in the query from breaking the parser."""
+    terms = [t for t in "".join(c if c.isalnum() else " " for c in query).split() if t]
+    return " AND ".join(f'"{t}"' for t in terms)
+
+
 class Store:
     def __init__(self, path: str | Path = "sferic.db") -> None:
         self.db = sqlite3.connect(str(path), check_same_thread=False)
         self.db.executescript(_SCHEMA)
+        self._fts = self._init_fts()
         self.db.commit()
+
+    def _init_fts(self) -> bool:
+        try:
+            self.db.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS strikes_fts USING fts5("
+                " id UNINDEXED, text, tokenize='porter unicode61')"
+            )
+            return True
+        except sqlite3.OperationalError:
+            return False  # sqlite built without FTS5 — search() falls back to LIKE
 
     # --- strikes ---
 
@@ -53,6 +73,11 @@ class Store:
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (s.id, s.station, s.flash, s.ts, s.toolset, s.kind, s.label, s.model_dump_json()),
         )
+        if self._fts:
+            self.db.execute("DELETE FROM strikes_fts WHERE id = ?", (s.id,))
+            self.db.execute(
+                "INSERT INTO strikes_fts (id, text) VALUES (?, ?)", (s.id, strike_text(s))
+            )
         self.db.commit()
 
     def strikes(
@@ -70,6 +95,43 @@ class Store:
         rows = self.db.execute(
             f"SELECT doc FROM strikes{where} ORDER BY ts DESC, id DESC LIMIT ?", args
         )
+        return [Strike.model_validate_json(r[0]) for r in rows]
+
+    def search(
+        self,
+        query: str,
+        station: str | None = None,
+        toolset: str | None = None,
+        kind: str | None = None,
+        limit: int = 20,
+    ) -> list[Strike]:
+        """Recall: strikes whose flattened text best matches `query`, ranked
+        best-first. Optional exact filters on station / toolset / kind."""
+        limit = max(1, min(limit, 200))
+        filt, fargs = [], []
+        for col, val in (("station", station), ("toolset", toolset), ("kind", kind)):
+            if val:
+                filt.append(f"s.{col} = ?")
+                fargs.append(val)
+        filt_sql = (" AND " + " AND ".join(filt)) if filt else ""
+
+        if self._fts:
+            match = _fts_query(query)
+            if not match:
+                return []
+            rows = self.db.execute(
+                "SELECT s.doc FROM strikes_fts f JOIN strikes s ON s.id = f.id"
+                f" WHERE strikes_fts MATCH ?{filt_sql}"
+                " ORDER BY bm25(strikes_fts) LIMIT ?",
+                [match, *fargs, limit],
+            )
+        else:
+            terms = [t for t in query.split() if t]
+            like = " AND ".join("s.doc LIKE ?" for _ in terms) or "1"
+            rows = self.db.execute(
+                f"SELECT s.doc FROM strikes s WHERE {like}{filt_sql} ORDER BY s.ts DESC LIMIT ?",
+                [*(f"%{t}%" for t in terms), *fargs, limit],
+            )
         return [Strike.model_validate_json(r[0]) for r in rows]
 
     # --- flashes ---

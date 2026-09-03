@@ -15,6 +15,8 @@ _FACES = ["flat", "flat", "flat", "left", "right", "top", "bottom", "inverted"]
 
 
 class SimulatedStation(StationTransport):
+    kind = "sim"
+
     def __init__(self, station_id: str = "sim-1") -> None:
         self.id = station_id
         self.model = "m5stack-sim"

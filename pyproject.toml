@@ -7,14 +7,18 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "ry-ops" }]
 dependencies = [
-    "mcp>=1.2.0",
+    "mcp>=2.0",
     "pydantic>=2.6",
     "pyserial>=3.5",
     "httpx>=0.27",
+    "starlette>=0.40",   # WS listener for networked stations (ADR-0009)
+    "uvicorn>=0.30",
+    "websockets>=13",    # fake-station dev client (also used by the e2e test)
 ]
 
 [project.scripts]
 sferic-collector = "sferic_collector.__main__:main"
+sferic-fake-station = "sferic_collector.fake_station:main"
 
 [dependency-groups]
 dev = [
