@@ -1,14 +1,14 @@
 # sferic-collector
 
 The **sferic** fleet collector — the companion MCP server from
-[ADR-0003](https://github.com/ry-ops/sferic-sticks3/blob/main/docs/adr/0003-companion-mcp-server.md).
+[ADR-0003](https://github.com/m5stack-lab/sferic-sticks3/blob/main/docs/adr/0003-companion-mcp-server.md).
 Host-side control plane: stations connect to it, MCP clients (agents)
 connect to it, it holds fleet state + the strike/flash store and dispatches
 `<toolset>.<verb>` calls to a target station's headless interface.
 
-Firmware lives in [`ry-ops/sferic-sticks3`](https://github.com/ry-ops/sferic-sticks3); the
+Firmware lives in [`m5stack-lab/sferic-sticks3`](https://github.com/m5stack-lab/sferic-sticks3); the
 per-toolset wire contracts are its
-[`docs/mcp/`](https://github.com/ry-ops/sferic-sticks3/tree/main/docs/mcp).
+[`docs/mcp/`](https://github.com/m5stack-lab/sferic-sticks3/tree/main/docs/mcp).
 
 ## Status
 
@@ -16,7 +16,7 @@ per-toolset wire contracts are its
 `web.py`: a Starlette listener stations dial into
 (`ws://<collector>:<port>/station`), same op vocabulary as serial, framed as
 `{"type":…}` JSON text frames
-([`docs/mcp/ws-transport.md`](https://github.com/ry-ops/sferic-sticks3/blob/main/docs/mcp/ws-transport.md),
+([`docs/mcp/ws-transport.md`](https://github.com/m5stack-lab/sferic-sticks3/blob/main/docs/mcp/ws-transport.md),
 ADR-0009). Per-station bearer token on the upgrade; a dropped socket removes
 the station and kills its stream session. Runs in the same process as the
 stdio MCP server when `SFERIC_WS_PORT` is set.
@@ -27,7 +27,7 @@ declares the toolset (`no_capable_station` / `ambiguous_station` otherwise).
 
 **Milestone 2 — real stick over USB serial.** `SerialStation` speaks the
 firmware's `>`/`<` line protocol
-([`docs/mcp/serial-transport.md`](https://github.com/ry-ops/sferic-sticks3/blob/main/docs/mcp/serial-transport.md)).
+([`docs/mcp/serial-transport.md`](https://github.com/m5stack-lab/sferic-sticks3/blob/main/docs/mcp/serial-transport.md)).
 Milestone 1 (skeleton, capability gating, SQLite store, in-process
 **simulated station**) is the fallback when nothing else is attached.
 
