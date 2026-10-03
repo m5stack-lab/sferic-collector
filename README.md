@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/banner.svg" alt="sferic-collector: Fleet collector + MCP server for sferic stations" width="100%"></p>
+
 # sferic-collector
 
 The **sferic** fleet collector — the companion MCP server from
@@ -129,3 +131,8 @@ tests/
 ## License
 
 MIT © 2026 ry-ops
+
+<!-- org-footer -->
+---
+
+<p align="center"><sub>Part of <a href="https://github.com/m5stack-lab">m5stack-lab</a> · unofficial M5Stack projects, not affiliated with M5Stack · built by <a href="https://github.com/ry-ops">ry-ops</a></sub></p>
