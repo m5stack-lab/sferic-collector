@@ -96,7 +96,8 @@ async def test_arm_returns_token_no_strike(collector):
 
 
 async def test_fire_with_token_stores_strike(collector):
-    await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)  # arm
+    armed = await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)
+    assert armed["confirm_token"] == _TOKEN
     r = await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, _TOKEN)
     assert r["fired"] is True
     assert r["result"] == {"sent": 39}
@@ -104,7 +105,7 @@ async def test_fire_with_token_stores_strike(collector):
 
 
 async def test_fire_bad_token_errors(collector):
-    await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)  # arm
+    await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)  # arm first
     with pytest.raises(CollectorError) as e:
         await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, "nope")
     assert e.value.code == "bad_token"
@@ -140,3 +141,26 @@ async def test_emit_capability_gate(collector):
     with pytest.raises(CollectorError) as e:
         await collector.emit_dispatch("usb.hid", "stick-abc123", {"text": "x"}, None)
     assert e.value.code == "capability_not_present"  # fake declares only ir, ble
+
+
+async def test_emit_disabled_tool_cannot_be_fired_even_with_a_valid_token(collector):
+    r = await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)
+    collector.disabled.add(("stick-abc123", "ir.tvbgone"))
+    with pytest.raises(CollectorError) as e:
+        await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, r["confirm_token"])
+    assert e.value.code == "capability_disabled"
+    assert collector.store.strikes() == []
+
+
+async def test_fire_with_wrong_tool_for_the_armed_token_is_rejected(collector):
+    r = await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, None)
+    with pytest.raises(CollectorError) as e:
+        await collector.emit_dispatch("ble.hid", "stick-abc123", None, r["confirm_token"])
+    assert e.value.code == "bad_token"  # (station, tool) keying: wrong tool, no such entry
+    # nothing fired on the device, nothing stored
+    assert collector.store.strikes() == []
+    # the original token is still valid for the tool it was actually armed for --
+    # the mismatched attempt above popped its own (station, "ble.hid") key, which
+    # never existed, so the real (station, "ir.tvbgone") entry was untouched
+    r2 = await collector.emit_dispatch("ir.tvbgone", "stick-abc123", None, r["confirm_token"])
+    assert r2["fired"] is True

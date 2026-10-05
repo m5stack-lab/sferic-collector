@@ -10,6 +10,7 @@ dependencies = [
     "mcp>=2.0",
     "pydantic>=2.6",
     "pyserial>=3.5",
+    "httpx>=0.27",
     "starlette>=0.40",   # WS listener for networked stations (ADR-0009)
     "uvicorn>=0.30",
     "websockets>=13",    # fake-station dev client (also used by the e2e test)
@@ -24,7 +25,6 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
-    "httpx>=0.27",   # Starlette TestClient — WS listener tests
 ]
 
 [build-system]

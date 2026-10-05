@@ -95,6 +95,31 @@ async def test_run_typed_error_raises_stationtoolerror():
     assert e.value.code == "device_only"
 
 
+async def test_run_clamps_oversized_ms_budget():
+    """A huge caller-supplied `ms` must not translate into an unbounded hold
+    on the station's single request lock (code-review finding, ADR-0010)."""
+    st = _station(lambda cmd: iter(()))
+    seen = {}
+
+    def fake_rpc(op, timeout=None, **fields):
+        seen["timeout"] = timeout
+        return {"ok": True, "result": {}}
+
+    st._rpc = fake_rpc
+    await st.run("wifi.scan", {"ms": 10_000_000})
+    assert seen["timeout"] == 120000 / 1000.0 + 10.0  # clamped, not ~10000s
+
+
+async def test_run_rejects_non_numeric_ms():
+    def responder(cmd):
+        yield "<" + json.dumps({"id": cmd["id"], "ok": True, "result": {}})
+
+    st = _station(responder)
+    with pytest.raises(StationToolError) as e:
+        await st.run("wifi.scan", {"ms": "soon"})
+    assert e.value.code == "bad_params"
+
+
 async def test_reply_id_mismatch_times_out():
     def responder(cmd):
         yield "<" + json.dumps({"id": cmd["id"] + 99, "ok": True, "station": {}})

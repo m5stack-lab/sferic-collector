@@ -148,16 +148,18 @@ class Store:
     def flashes(self, station: str | None = None) -> list[Flash]:
         where, args = ("", [])
         if station:
-            where, args = (" WHERE station = ?", [station])
-        docs = self.db.execute(
-            f"SELECT doc FROM flashes{where} ORDER BY opened_at DESC", args
+            where, args = (" WHERE f.station = ?", [station])
+        rows = self.db.execute(
+            "SELECT f.doc, COUNT(s.id) FROM flashes f"
+            " LEFT JOIN strikes s ON s.flash = f.id"
+            f"{where}"
+            " GROUP BY f.id ORDER BY f.opened_at DESC",
+            args,
         ).fetchall()
         out: list[Flash] = []
-        for (doc,) in docs:
+        for doc, count in rows:
             f = Flash.model_validate_json(doc)
-            (f.strike_count,) = self.db.execute(
-                "SELECT COUNT(*) FROM strikes WHERE flash = ?", (f.id,)
-            ).fetchone()
+            f.strike_count = count
             out.append(f)
         return out
 

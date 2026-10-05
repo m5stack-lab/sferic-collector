@@ -82,6 +82,16 @@ claude mcp add sferic-collector -- uv --directory /path/to/sferic-collector run 
 # add --env SFERIC_SERIAL_PORT=/dev/cu.usbmodem1101 for a real stick
 ```
 
+## CVE enrichment
+
+`wifi.scan` and `ble.scan` results are automatically enriched on ingest
+with a best-effort `security` block per AP/device: vendor (via a live
+MAC-OUI lookup) and, when the vendor is known to
+[cve-search](https://cve.circl.lu), a CVE count/list if the scanned
+device's own SSID/name matches one of that vendor's known products. This
+is a **lead**, not a confirmed finding — no firmware/version fingerprinting
+exists yet. See [ADR-0010](https://github.com/ry-ops/sferic-sticks3/blob/main/docs/adr/0010-cve-enrichment.md).
+
 ## MCP surface
 
 | Tool | Purpose |
@@ -124,6 +134,9 @@ src/sferic_collector/
   web_dashboard.py  the dashboard page (one self-contained HTML string)
   fake_station.py   `sferic-fake-station` — a firmware stand-in over WebSocket
   collector.py    dispatch + stream + emit: capability gating/routing, store
+  oui.py          MAC OUI -> vendor (macvendors.com, ADR-0010)
+  cve.py          vendor/product -> CVEs (cve-search, ADR-0010)
+  enrichment.py   wires oui.py + cve.py into wifi.scan / ble.scan ingest
   server.py       MCPServer surface (one-shot + stream + emit + sferic.recall)
 tests/
 ```
